@@ -1,9 +1,7 @@
 -- Services
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local StarterGui = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
@@ -102,10 +100,28 @@ local function toggleAnchor(btn)
 	end
 end
 
--- 2. Auto Buy Logik
+-- 2. Auto Buy Logik (100% Lagfrei via Event)
 local autoBuyEnabled = false
-local autoBuyConnection = nil
-local promptShownConnection = nil
+local autoBuyConnections = {}
+
+local function hookPrompt(prompt, keyword, enabledStateRef)
+	if autoBuyConnections[prompt] then return end
+	
+	autoBuyConnections[prompt] = prompt.PromptShown:Connect(function()
+		if not autoBuyEnabled then return end
+		local actionText = string.lower(prompt.ActionText or "")
+		local objectText = string.lower(prompt.ObjectText or "")
+
+		if string.find(actionText, keyword) or string.find(objectText, keyword) then
+			prompt.HoldDuration = 0
+			task.spawn(function()
+				pcall(function()
+					fireproximityprompt(prompt)
+				end)
+			end)
+		end
+	end)
+end
 
 local function toggleAutoBuy(btn)
 	autoBuyEnabled = not autoBuyEnabled
@@ -114,72 +130,45 @@ local function toggleAutoBuy(btn)
 		btn.BackgroundColor3 = Color3.fromRGB(60, 180, 80)
 		btn.Text = "Auto Buy: ON"
 
-		promptShownConnection = ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
-			if not autoBuyEnabled then return end
-			local actionText = string.lower(prompt.ActionText or "")
-			local objectText = string.lower(prompt.ObjectText or "")
-
-			if string.find(actionText, "purchase") or string.find(objectText, "purchase") then
-				prompt.HoldDuration = 0
-				task.spawn(function()
-					pcall(function()
-						fireproximityprompt(prompt)
-						prompt:InputHoldBegin()
-						task.wait(0.05)
-						prompt:InputHoldEnd()
-					end)
-				end)
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("ProximityPrompt") then
+				hookPrompt(obj, "purchase", autoBuyEnabled)
 			end
-		end)
+		end
 
-		autoBuyConnection = RunService.RenderStepped:Connect(function()
-			local char = LocalPlayer.Character
-			local root = char and char:FindFirstChild("HumanoidRootPart")
-			if not root then return end
-
-			for _, descendant in ipairs(workspace:GetDescendants()) do
-				if descendant:IsA("ProximityPrompt") then
-					local parent = descendant.Parent
-					if parent and (parent:IsA("BasePart") or parent:IsA("Model")) then
-						local partPos = parent.Position or (parent:IsA("Model") and parent:GetPivot().Position)
-						if partPos then
-							local dist = (root.Position - partPos).Magnitude
-							if dist <= 35 then
-								local actionText = string.lower(descendant.ActionText or "")
-								local objectText = string.lower(descendant.ObjectText or "")
-
-								if string.find(actionText, "purchase") or string.find(objectText, "purchase") then
-									if descendant.HoldDuration > 0 then
-										descendant.HoldDuration = 0
-									end
-									pcall(function()
-										fireproximityprompt(descendant)
-									end)
-								end
-							end
-						end
-					end
-				end
+		workspace.DescendantAdded:Connect(function(obj)
+			if obj:IsA("ProximityPrompt") then
+				hookPrompt(obj, "purchase", autoBuyEnabled)
 			end
 		end)
 	else
 		btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
 		btn.Text = "Auto Buy: OFF"
-		if autoBuyConnection then
-			autoBuyConnection:Disconnect()
-			autoBuyConnection = nil
-		end
-		if promptShownConnection then
-			promptShownConnection:Disconnect()
-			promptShownConnection = nil
-		end
 	end
 end
 
--- 3. Auto Sell Logik
+-- 3. Auto Sell Logik (100% Lagfrei via Event)
 local autoSellEnabled = false
-local autoSellConnection = nil
-local sellPromptShownConnection = nil
+local autoSellConnections = {}
+
+local function hookSellPrompt(prompt, keyword)
+	if autoSellConnections[prompt] then return end
+	
+	autoSellConnections[prompt] = prompt.PromptShown:Connect(function()
+		if not autoSellEnabled then return end
+		local actionText = string.lower(prompt.ActionText or "")
+		local objectText = string.lower(prompt.ObjectText or "")
+
+		if string.find(actionText, keyword) or string.find(objectText, keyword) then
+			prompt.HoldDuration = 0
+			task.spawn(function()
+				pcall(function()
+					fireproximityprompt(prompt)
+				end)
+			end)
+		end
+	end)
+end
 
 local function toggleAutoSell(btn)
 	autoSellEnabled = not autoSellEnabled
@@ -188,69 +177,24 @@ local function toggleAutoSell(btn)
 		btn.BackgroundColor3 = Color3.fromRGB(60, 180, 80)
 		btn.Text = "Auto Sell: ON"
 
-		sellPromptShownConnection = ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
-			if not autoSellEnabled then return end
-			local actionText = string.lower(prompt.ActionText or "")
-			local objectText = string.lower(prompt.ObjectText or "")
-
-			if string.find(actionText, "sell") or string.find(objectText, "sell") then
-				prompt.HoldDuration = 0
-				task.spawn(function()
-					pcall(function()
-						fireproximityprompt(prompt)
-						prompt:InputHoldBegin()
-						task.wait(0.05)
-						prompt:InputHoldEnd()
-					end)
-				end)
+		for _, obj in ipairs(workspace:GetDescendants()) do
+			if obj:IsA("ProximityPrompt") then
+				hookSellPrompt(obj, "sell")
 			end
-		end)
+		end
 
-		autoSellConnection = RunService.RenderStepped:Connect(function()
-			local char = LocalPlayer.Character
-			local root = char and char:FindFirstChild("HumanoidRootPart")
-			if not root then return end
-
-			for _, descendant in ipairs(workspace:GetDescendants()) do
-				if descendant:IsA("ProximityPrompt") then
-					local parent = descendant.Parent
-					if parent and (parent:IsA("BasePart") or parent:IsA("Model")) then
-						local partPos = parent.Position or (parent:IsA("Model") and parent:GetPivot().Position)
-						if partPos then
-							local dist = (root.Position - partPos).Magnitude
-							if dist <= 35 then
-								local actionText = string.lower(descendant.ActionText or "")
-								local objectText = string.lower(descendant.ObjectText or "")
-
-								if string.find(actionText, "sell") or string.find(objectText, "sell") then
-									if descendant.HoldDuration > 0 then
-										descendant.HoldDuration = 0
-									end
-									pcall(function()
-										fireproximityprompt(descendant)
-									end)
-								end
-							end
-						end
-					end
-				end
+		workspace.DescendantAdded:Connect(function(obj)
+			if obj:IsA("ProximityPrompt") then
+				hookSellPrompt(obj, "sell")
 			end
 		end)
 	else
 		btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
 		btn.Text = "Auto Sell: OFF"
-		if autoSellConnection then
-			autoSellConnection:Disconnect()
-			autoSellConnection = nil
-		end
-		if sellPromptShownConnection then
-			sellPromptShownConnection:Disconnect()
-			sellPromptShownConnection = nil
-		end
 	end
 end
 
--- 4. Anti Reset Logik (Ohne den Chat zu verstecken)
+-- 4. Anti Reset Logik
 local antiResetEnabled = false
 local antiResetConnection = nil
 local characterAddedAntiReset = nil
@@ -269,7 +213,6 @@ end
 local function toggleAntiReset(btn)
 	antiResetEnabled = not antiResetEnabled
 
-	-- Nur den Reset-Button im Menü blockieren (lässt den Chat in Ruhe)
 	pcall(function()
 		StarterGui:SetCore("ResetButtonCallback", not antiResetEnabled)
 	end)
@@ -362,7 +305,7 @@ function loadMainHub(scale)
 	title.ZIndex = 3
 
 	-- ==========================================
-	-- RUNDER LOGO TOGGLE-BUTTON (Draggable)
+	-- RUNDER LOGO TOGGLE-BUTTON (Ohne Animation)
 	-- ==========================================
 	ToggleButton = Instance.new("ImageButton", ScreenGui)
 	ToggleButton.Name = "ApexToggleButton"
@@ -377,7 +320,7 @@ function loadMainHub(scale)
 	tbCorner.CornerRadius = UDim.new(1, 0)
 
 	-- ==========================================
-	-- X-BUTTON (Schließen)
+	-- X-BUTTON (Sofortiges Schließen ohne Animation)
 	-- ==========================================
 	local closeBtn = Instance.new("TextButton", TopBar)
 	closeBtn.Name = "CloseButton"
@@ -394,21 +337,11 @@ function loadMainHub(scale)
 	closeCorner.CornerRadius = UDim.new(0, 6)
 
 	closeBtn.MouseButton1Down:Connect(function()
-		local currentSize = MainFrame.Size
-		local closeTween = TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-			Size = UDim2.new(0, 0, 0, 0),
-			Position = MainFrame.Position + UDim2.new(0, uiWidth/2, 0, MainFrame.AbsoluteSize.Y/2)
-		})
-		closeTween:Play()
-		closeTween.Completed:Connect(function()
-			MainFrame.Visible = false
-			MainFrame.Size = currentSize
-			MainFrame.Position = UDim2.new(0.5, -uiWidth/2, 0.5, -currentSize.Y.Offset/2)
-			ToggleButton.Visible = true
-		end)
+		MainFrame.Visible = false
+		ToggleButton.Visible = true
 	end)
 
-	-- Logo Drag & Click Logik
+	-- Logo Drag & Click Logik (Sofortiges Öffnen ohne Animation)
 	local isDraggingToggle = false
 	local toggleDragStart, toggleStartPos, hasMoved = false, nil, false
 
